@@ -1,5 +1,5 @@
 import type { OrdersApi } from "../clients/orders-api.js";
-import { ValidationError } from "../errors.js";
+import { UpstreamError, ValidationError } from "../errors.js";
 import type { SyncRunsRepository } from "../repositories/sync-runs.js";
 import type { OrdersService } from "./orders.js";
 
@@ -50,8 +50,9 @@ export class SyncService {
             stats.invalid++;
           }
         }
-        // API в конце отдаёт не nextCursor: null, а пустую страницу с тем же курсором
-        if (!page.nextCursor || page.items.length === 0 || seen.has(page.nextCursor)) break;
+        // Последняя страница бывает пустой, с тем же курсором.
+        if (page.nextCursor === null || (page.items.length === 0 && page.nextCursor === cursor)) break;
+        if (seen.has(page.nextCursor)) throw new UpstreamError("/orders: pagination cursor repeated");
         seen.add(page.nextCursor);
         cursor = page.nextCursor;
       }

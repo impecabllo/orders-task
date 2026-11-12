@@ -5,7 +5,7 @@ const ctx = setupTestApp();
 
 describe("GET /customers/:id/daily-totals", () => {
   it("суммирует оплаченные заказы по дням в таймзоне клиента", async () => {
-    // c_1 — Europe/Moscow (UTC+3): 20:30Z ещё 10-е, 21:30Z уже 11-е
+    // В Москве (UTC+3) 20:30Z приходится на 10-е число, а 21:30Z уже на 11-е.
     await postWebhook(ctx.app, apiOrder({ amount: 1000, createdAt: "2026-02-10T20:30:00Z" }));
     await postWebhook(ctx.app, apiOrder({ amount: 250, createdAt: "2026-02-10T21:30:00Z" }));
     await postWebhook(ctx.app, apiOrder({ amount: "99", createdAt: "2026-02-11T10:00:00Z" }));
@@ -21,7 +21,7 @@ describe("GET /customers/:id/daily-totals", () => {
 
   it("распределяет заказы по местным дням до и после перехода на летнее время", async () => {
     ctx.api.customers.set("c_1", "Europe/Berlin");
-    // До перехода 22:30Z — 23:30 того же дня, после перехода — 00:30 следующего.
+    // До перехода 22:30Z соответствует 23:30 того же дня. После перехода это 00:30 следующего дня.
     await postWebhook(ctx.app, apiOrder({ amount: 100, createdAt: "2026-03-28T22:30:00Z" }));
     await postWebhook(ctx.app, apiOrder({ amount: 200, createdAt: "2026-03-29T22:30:00Z" }));
 
@@ -77,7 +77,7 @@ describe("GET /customers/:id/daily-totals", () => {
     expect((await dailyTotals(ctx.app, "c_1", "2026-03-02", "2026-03-01")).statusCode).toBe(400);
   });
 
-  it("неизвестный клиент — 404", async () => {
+  it("возвращает 404 для неизвестного клиента", async () => {
     const res = await dailyTotals(ctx.app, "nobody", "2026-02-10", "2026-02-10");
     expect(res.statusCode).toBe(404);
   });

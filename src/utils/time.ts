@@ -1,13 +1,12 @@
-const HAS_ZONE = /(Z|[+-]\d{2}:?\d{2})$/i;
+const ISO_DATE_TIME = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/i;
 
-/**
- * ISO 8601 → Date. По контракту внешний API отдаёт время в UTC,
- * но иногда без указателя зоны ("2026-03-01T00:40:39") — такие строки тоже считаем UTC.
- */
+/** Время без указателя зоны считаем UTC. */
 export function parseUtc(raw: unknown): Date {
   if (typeof raw !== "string") throw new Error(`invalid date: ${JSON.stringify(raw)}`);
   const s = raw.trim();
-  const d = new Date(HAS_ZONE.test(s) ? s : `${s}Z`);
+  const parts = ISO_DATE_TIME.exec(s);
+  if (!parts || !isCalendarDate(parts[1])) throw new Error(`invalid date: ${JSON.stringify(raw)}`);
+  const d = new Date(parts[2] ? s : `${s}Z`);
   if (Number.isNaN(d.getTime())) throw new Error(`invalid date: ${JSON.stringify(raw)}`);
   return d;
 }

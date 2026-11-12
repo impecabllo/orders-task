@@ -18,13 +18,16 @@ export interface OrdersApi {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+function retryDelay(header: string | null, now: number): number {
+  if (!header) return 1000;
+  if (/^\d+$/.test(header)) return Number(header) * 1000;
+  const date = Date.parse(header);
+  return Number.isNaN(date) ? 1000 : Math.max(0, date - now);
+}
+
 /**
- * HTTP-клиент внешнего API заказов.
- *
- * Особенности API (поддерживается другой командой, документация отстаёт):
- * - лимит 5 rps; при превышении — 429, иногда без Retry-After;
- * - иногда превышение приходит как 200 с телом { "error": "rate_limited" }.
- * Все запросы идут последовательно через общий интервал, ретраи — с экспоненциальной паузой.
+ * Внешний API принимает до 5 запросов в секунду. При превышении возвращает 429
+ * или 200 с телом { "error": "rate_limited" }.
  */
 export class HttpOrdersApi implements OrdersApi {
   private nextSlot = 0;
@@ -39,28 +42,31 @@ export class HttpOrdersApi implements OrdersApi {
     url.searchParams.set("limit", String(limit));
     if (cursor !== null) url.searchParams.set("cursor", cursor);
     const body = (await this.request(url)) as Partial<OrdersPage> | null;
-    if (!body || !Array.isArray(body.items)) {
-      throw new UpstreamError(`unexpected /orders response: ${JSON.stringify(body).slice(0, 200)}`);
+    if (!body || !Array.isArray(body.items) || (body.nextCursor !== null && typeof body.nextCursor !== "string")) {
+      throw new UpstreamError("unexpected /orders response");
     }
-    return { items: body.items, nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : null };
+    return { items: body.items, nextCursor: body.nextCursor };
   }
 
   async getCustomer(id: string): Promise<Customer | null> {
     const body = (await this.request(new URL(`/customers/${encodeURIComponent(id)}`, this.baseUrl))) as Partial<Customer> | null;
     if (body === null) return null;
-    if (typeof body.timezone !== "string") throw new UpstreamError(`unexpected /customers response: ${JSON.stringify(body)}`);
+    if (body.id !== id || typeof body.timezone !== "string") {
+      throw new UpstreamError("unexpected /customers response");
+    }
     return { id, timezone: body.timezone };
   }
 
   private async throttle(): Promise<void> {
-    const interval = 1000 / (this.opts.rps ?? 4);
-    const now = Date.now();
-    const slot = Math.max(now, this.nextSlot);
-    this.nextSlot = slot + interval;
-    if (slot > now) await sleep(slot - now);
+    let wait = this.nextSlot - Date.now();
+    while (wait > 0) {
+      await sleep(wait);
+      wait = this.nextSlot - Date.now();
+    }
+    this.nextSlot = Date.now() + 1000 / (this.opts.rps ?? 4);
   }
 
-  /** null — 404. */
+  /** Возвращает null при HTTP 404. */
   private async request(url: URL): Promise<unknown> {
     const maxAttempts = this.opts.maxAttempts ?? 8;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -70,24 +76,28 @@ export class HttpOrdersApi implements OrdersApi {
       try {
         res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
       } catch {
-        await sleep(backoff);
+        if (attempt < maxAttempts) await sleep(backoff);
         continue;
       }
       if (res.status === 404) return null;
       if (res.status === 429) {
-        const retryAfter = Number(res.headers.get("retry-after"));
-        this.nextSlot = Date.now() + (retryAfter > 0 ? retryAfter * 1000 : 1000);
+        const now = Date.now();
+        this.nextSlot = Math.max(this.nextSlot, now + retryDelay(res.headers.get("retry-after"), now));
         continue;
       }
       if (res.status >= 500) {
-        await sleep(backoff);
+        if (attempt < maxAttempts) await sleep(backoff);
         continue;
       }
       if (!res.ok) throw new UpstreamError(`${url.pathname}: HTTP ${res.status}`);
-      const body = (await res.json()) as unknown;
-      if (body && typeof body === "object" && "error" in body) {
-        // 200 с ошибкой в теле — на практике это тот же rate limit
-        this.nextSlot = Date.now() + 1000;
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch {
+        throw new UpstreamError(`${url.pathname}: invalid JSON response`);
+      }
+      if (body && typeof body === "object" && "error" in body && body.error === "rate_limited") {
+        this.nextSlot = Math.max(this.nextSlot, Date.now() + 1000);
         continue;
       }
       return body;

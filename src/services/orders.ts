@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ValidationError } from "../errors.js";
 import type { ApplyResult, Order, OrdersRepository } from "../repositories/orders.js";
-import { parseRub, toKop } from "../utils/money.js";
+import { toKop } from "../utils/money.js";
 import { parseUtc } from "../utils/time.js";
 
 const MoneyAmount = z.union([z.number(), z.string()]);
@@ -30,8 +30,8 @@ export class OrdersService {
       return {
         id: o.id,
         customerId: o.customerId,
-        amountKop: toKop(parseRub(o.amount)),
-        amountPaidKop: o.amountPaid == null ? null : toKop(parseRub(o.amountPaid)),
+        amountKop: toKop(o.amount),
+        amountPaidKop: o.amountPaid == null ? null : toKop(o.amountPaid),
         status: o.status,
         createdAt: parseUtc(o.createdAt),
         updatedAt: parseUtc(o.updatedAt),

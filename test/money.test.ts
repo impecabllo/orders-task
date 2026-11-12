@@ -32,6 +32,12 @@ describe("toKop / fromKop", () => {
     expect(toKop(1e-7)).toBe(0);
   });
 
+  it("отбрасывает доли копейки в строке до преобразования в число", () => {
+    expect(toKop("10000000000000.0099")).toBe(1000000000000000);
+    expect(toKop(" +2.9E-1 ")).toBe(29);
+    expect(() => toKop("0x10")).toThrow();
+  });
+
   it("копейки в рубли", () => {
     expect(fromKop(250000)).toBe(2500);
     expect(fromKop(1099)).toBe(10.99);

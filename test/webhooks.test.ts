@@ -43,7 +43,20 @@ describe("POST /webhooks/order", () => {
     expect(rows[0].updated_at.toISOString()).toBe("2026-02-11T12:00:00.000Z");
   });
 
-  it("невалидное тело — 400", async () => {
+  it("возвращает 400 для синтаксически неверного JSON", async () => {
+    const res = await ctx.app.inject({
+      method: "POST", url: "/webhooks/order", headers: { "content-type": "application/json" }, payload: "{",
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: "bad_request" });
+  });
+
+  it("отклоняет пустую строку в amountPaid", async () => {
+    const res = await postWebhook(ctx.app, apiOrder({ amountPaid: " " }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("возвращает 400, если отсутствуют поля заказа", async () => {
     const res = await postWebhook(ctx.app, { id: "x" });
     expect(res.statusCode).toBe(400);
   });

@@ -21,7 +21,7 @@ export class TotalsService {
 
   /**
    * Сумма оплаченных заказов клиента по дням в его таймзоне, from..to включительно.
-   * Дни без оплат — с нулём.
+   * Для дней без оплат суммы равны нулю.
    */
   async daily(customerId: string, from: string, to: string): Promise<DailyTotal[]> {
     const timezone = await this.customers.timezone(customerId);

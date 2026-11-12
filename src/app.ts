@@ -12,6 +12,10 @@ export function buildApp(c: Container, opts: { logger?: boolean } = {}): Fastify
     if (err instanceof AppError) {
       return reply.code(err.statusCode).send({ error: err.code, message: err.message });
     }
+    if (err instanceof Error && "statusCode" in err && typeof err.statusCode === "number"
+      && err.statusCode >= 400 && err.statusCode < 500) {
+      return reply.code(err.statusCode).send({ error: "bad_request", message: err.message });
+    }
     req.log.error(err);
     return reply.code(500).send({ error: "internal", message: "Internal error" });
   });

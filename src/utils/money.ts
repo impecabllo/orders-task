@@ -1,10 +1,10 @@
-/**
- * Деньги внутри сервиса — целые копейки. Рубли — только на входе (внешний API) и в ответах.
- */
+// Внутри сервиса суммы хранятся в целых копейках.
+const DECIMAL = /^\+?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 
 /** Сумма из внешнего API: число или строка с числом ("250.10"). */
 export function parseRub(raw: unknown): number {
-  const value = typeof raw === "string" ? Number(raw.trim()) : raw;
+  const text = typeof raw === "string" ? raw.trim() : "";
+  const value = DECIMAL.test(text) ? Number(text) : raw;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new Error(`invalid amount: ${JSON.stringify(raw)}`);
   }
@@ -12,9 +12,12 @@ export function parseRub(raw: unknown): number {
 }
 
 /** Рубли → копейки. Доли копейки отбрасываются: деньги клиенту не досчитываем. */
-export function toKop(rub: number): number {
-  // Сдвигаем десятичную точку в строке, чтобы 0.29 не превратилось в 28.999… копейки.
-  const [coefficient, exponent = "0"] = rub.toString().split("e");
+export function toKop(rub: number | string): number {
+  const value = parseRub(rub);
+  if (value === 0) return 0;
+  // Сдвигаем точку в исходной записи суммы, сохраняя десятичные разряды.
+  const decimal = typeof rub === "string" ? rub.trim().toLowerCase() : String(value);
+  const [coefficient, exponent = "0"] = decimal.split("e");
   const [whole, fraction = ""] = coefficient.split(".");
   const digits = whole + fraction;
   const centPosition = whole.length + Number(exponent) + 2;

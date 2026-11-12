@@ -17,6 +17,29 @@ describe("POST /sync", () => {
     expect(rows[0].n).toBe(3);
   });
 
+  it("продолжает синк после пустой страницы с новым курсором", async () => {
+    ctx.api.pages.set(null, { items: [], nextCursor: "p2" });
+    ctx.api.pages.set("p2", { items: [apiOrder()], nextCursor: null });
+    const res = await ctx.app.inject({ method: "POST", url: "/sync" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ pages: 2, received: 1, applied: 1 });
+  });
+
+  it("возвращает ошибку, если непустые страницы зациклились", async () => {
+    const order = apiOrder();
+    ctx.api.pages.set(null, { items: [order], nextCursor: "p2" });
+    ctx.api.pages.set("p2", { items: [order], nextCursor: "p2" });
+
+    const res = await ctx.app.inject({ method: "POST", url: "/sync" });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: "upstream_error" });
+    const { rows } = await ctx.db.query("SELECT error, finished_at FROM sync_runs");
+    expect(rows[0]).toMatchObject({ error: "/orders: pagination cursor repeated", finished_at: expect.any(Date) });
+
+    ctx.api.pages.set("p2", { items: [], nextCursor: "p2" });
+    expect((await ctx.app.inject({ method: "POST", url: "/sync" })).json()).toMatchObject({ stale: 1 });
+  });
+
   it("невалидные заказы пропускает, а не падает", async () => {
     ctx.api.pages.set(null, { items: [apiOrder(), { id: "broken" }, apiOrder({ amount: "abc" })], nextCursor: null });
     const res = await ctx.app.inject({ method: "POST", url: "/sync" });
